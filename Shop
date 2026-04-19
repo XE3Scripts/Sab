@@ -1,0 +1,143 @@
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local placeId = game.PlaceId
+
+-- =========================
+-- FUNKCJA SZUKANIA SERWERA
+-- =========================
+local function getServers(cursor)
+    local url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
+    
+    if cursor then
+        url = url .. "&cursor=" .. cursor
+    end
+
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet(url))
+    end)
+
+    if success then
+        return result
+    else
+        warn("Błąd pobierania serwerów")
+        return nil
+    end
+end
+
+local function findBestServer()
+    local cursor = nil
+    local bestServer = nil
+
+    repeat
+        local data = getServers(cursor)
+        if not data then break end
+
+        for _, server in ipairs(data.data) do
+            if server.playing < server.maxPlayers then
+                if not bestServer or server.playing < bestServer.playing then
+                    bestServer = server
+                end
+            end
+        end
+
+        cursor = data.nextPageCursor
+    until bestServer or not cursor
+
+    return bestServer
+end
+
+local function joinBestServer()
+    local server = findBestServer()
+
+    if server then
+        print("Dołączanie do:", server.id)
+        TeleportService:TeleportToPlaceInstance(placeId, server.id, player)
+    else
+        warn("Brak serwera")
+    end
+end
+
+-- =========================
+-- GUI (PRZYCISK SHOP)
+-- =========================
+-- =========================
+-- GUI (PRZYCISK + RAMKA)
+-- =========================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- kontener (żeby wszystko ruszało się razem)
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 160, 0, 50)
+frame.Position = UDim2.new(0.5, -80, 0.5, -25)
+frame.BackgroundTransparency = 1
+frame.Parent = screenGui
+
+-- przycisk Shop
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 120, 1, 0)
+button.Position = UDim2.new(0, 40, 0, 0)
+button.Text = "Shop"
+button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+button.TextColor3 = Color3.new(1,1,1)
+button.Parent = frame
+
+-- ramka do przesuwania (uchwyt)
+local dragHandle = Instance.new("Frame")
+dragHandle.Size = UDim2.new(0, 40, 1, 0)
+dragHandle.Position = UDim2.new(0, 0, 0, 0)
+dragHandle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+dragHandle.Parent = frame
+
+-- =========================
+-- DRAG TYLKO NA RAMCE
+-- =========================
+local dragging = false
+local dragStart
+local startPos
+
+dragHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+    end
+end)
+
+dragHandle.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- klik działa tylko na przycisku
+button.MouseButton1Click:Connect(function()
+    joinBestServer()
+end)
+
+-- =========================
+-- KLAWISZ DEL
+-- =========================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.Delete then
+        joinBestServer()
+    end
+end)
